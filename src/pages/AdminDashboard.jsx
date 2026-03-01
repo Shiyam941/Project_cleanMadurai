@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { collection, getDocs, query, where } from 'firebase/firestore'
 import { utils, writeFile } from 'xlsx'
 import { db } from '../firebase'
+import resolveErrorMessage from '../utils/errorMessage'
 
 function AdminDashboard() {
   const [complaints, setComplaints] = useState([])
@@ -37,7 +38,11 @@ function AdminDashboard() {
         setOfficers(mappedOfficers)
         setError('')
       } catch (err) {
-        setError(err.message || 'Unable to load statewide complaints.')
+        setError(
+          resolveErrorMessage(err, {
+            fallbackMessage: 'Unable to load statewide complaints.',
+          }),
+        )
       } finally {
         setLoading(false)
       }

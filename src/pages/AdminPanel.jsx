@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { collection, doc, getDocs, query, updateDoc, where } from 'firebase/firestore'
+import { collection, doc, onSnapshot, query, updateDoc, where } from 'firebase/firestore'
 import { utils, writeFile } from 'xlsx'
 import { db } from '../firebase'
+import resolveErrorMessage from '../utils/errorMessage'
+import { useTranslation } from 'react-i18next'
 
 const formatDateTime = (value) => {
   if (!value) {
@@ -18,6 +20,7 @@ const formatDateTime = (value) => {
 const buildFilename = (extension) => `clean-madurai-complaints-${new Date().toISOString().slice(0, 10)}.${extension}`
 
 function AdminPanel() {
+  const { t } = useTranslation()
   const [complaints, setComplaints] = useState([])
   const [officers, setOfficers] = useState([])
   const [loading, setLoading] = useState(true)
@@ -25,16 +28,32 @@ function AdminPanel() {
   const [assigning, setAssigning] = useState({})
   const [exporting, setExporting] = useState(false)
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true)
-        const [complaintSnap, officerSnap] = await Promise.all([
-          getDocs(collection(db, 'complaints')),
-          getDocs(query(collection(db, 'users'), where('role', '==', 'officer'))),
-        ])
+  const handleFriendlyError = (err, fallbackMessage) => {
+    setError(
+      resolveErrorMessage(err, {
+        fallbackMessage,
+      }),
+    )
+  }
 
-        const complaintRows = complaintSnap.docs
+  useEffect(() => {
+    const complaintsRef = collection(db, 'complaints')
+    const officersQuery = query(collection(db, 'users'), where('role', '==', 'officer'))
+
+    setLoading(true)
+    let complaintsReady = false
+    let officersReady = false
+
+    const finishLoading = () => {
+      if (complaintsReady && officersReady) {
+        setLoading(false)
+      }
+    }
+
+    const unsubscribeComplaints = onSnapshot(
+      complaintsRef,
+      (snapshot) => {
+        const rows = snapshot.docs
           .map((docSnap) => {
             const data = docSnap.data()
             const createdAt = data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : data.createdAt
@@ -48,25 +67,47 @@ function AdminPanel() {
           })
           .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
 
-        const officerRows = officerSnap.docs
+        setComplaints(rows)
+        setError('')
+        complaintsReady = true
+        finishLoading()
+      },
+      (err) => {
+        complaintsReady = true
+        finishLoading()
+        handleFriendlyError(err, 'Unable to load admin data right now.')
+      },
+    )
+
+    const unsubscribeOfficers = onSnapshot(
+      officersQuery,
+      (snapshot) => {
+        const rows = snapshot.docs
           .map((docSnap) => ({
             id: docSnap.id,
             ...docSnap.data(),
           }))
           .sort((a, b) => (a.ward || '').localeCompare(b.ward || ''))
 
-        setComplaints(complaintRows)
-        setOfficers(officerRows)
-        setError('')
-      } catch (err) {
-        setError(err.message || 'Unable to load admin data right now.')
-      } finally {
-        setLoading(false)
-      }
-    }
+        setOfficers(rows)
+        officersReady = true
+        finishLoading()
+      },
+      (err) => {
+        officersReady = true
+        finishLoading()
+        handleFriendlyError(err, 'Unable to load admin data right now.')
+      },
+    )
 
-    fetchData()
+    return () => {
+      unsubscribeComplaints()
+      unsubscribeOfficers()
+    }
   }, [])
+
+  const activeOfficers = useMemo(() => officers.filter(o => o.status !== 'pending' && o.status !== 'rejected'), [officers])
+  const pendingOfficers = useMemo(() => officers.filter(o => o.status === 'pending'), [officers])
 
   const stats = useMemo(() => {
     const pending = complaints.filter((item) => item.status === 'Pending').length
@@ -83,11 +124,11 @@ function AdminPanel() {
   }, [complaints])
 
   const officerPerformance = useMemo(() => {
-    if (!officers.length) {
+    if (!activeOfficers.length) {
       return []
     }
 
-    return officers
+    return activeOfficers
       .map((officer) => {
         const assignedComplaints = complaints.filter((c) => c.ward === officer.ward)
         const pending = assignedComplaints.filter((c) => c.status === 'Pending').length
@@ -108,7 +149,7 @@ function AdminPanel() {
         }
       })
       .sort((a, b) => b.activelyHandled - a.activelyHandled)
-  }, [officers, complaints])
+  }, [activeOfficers, complaints])
 
   const unassignedComplaints = useMemo(
     () => complaints.filter((complaint) => !complaint.assignedOfficerId),
@@ -192,7 +233,7 @@ function AdminPanel() {
     if (!officerId) {
       return
     }
-    const officer = officers.find((entry) => entry.id === officerId)
+    const officer = activeOfficers.find((entry) => entry.id === officerId)
     if (!officer) {
       setError('Officer record not found.')
       return
@@ -208,19 +249,37 @@ function AdminPanel() {
         prev.map((complaint) =>
           complaint.id === complaintId
             ? {
-                ...complaint,
-                assignedOfficerId: officer.id,
-                assignedOfficerName: officer.name || '',
-                assignedAt: new Date().toISOString(),
-              }
+              ...complaint,
+              assignedOfficerId: officer.id,
+              assignedOfficerName: officer.name || '',
+              assignedAt: new Date().toISOString(),
+            }
             : complaint,
         ),
       )
       setError('')
     } catch (err) {
-      setError(err.message || 'Unable to assign officer right now.')
+      handleFriendlyError(err, 'Unable to assign officer right now.')
     } finally {
       setAssigning((prev) => ({ ...prev, [complaintId]: false }))
+    }
+  }
+
+  const handleApproveOfficer = async (officerId) => {
+    try {
+      await updateDoc(doc(db, 'users', officerId), { status: 'approved' })
+      setOfficers(prev => prev.map(o => o.id === officerId ? { ...o, status: 'approved' } : o))
+    } catch (err) {
+      handleFriendlyError(err, 'Unable to approve officer.')
+    }
+  }
+
+  const handleRejectOfficer = async (officerId) => {
+    try {
+      await updateDoc(doc(db, 'users', officerId), { status: 'rejected' })
+      setOfficers(prev => prev.map(o => o.id === officerId ? { ...o, status: 'rejected' } : o))
+    } catch (err) {
+      handleFriendlyError(err, 'Unable to reject officer.')
     }
   }
 
@@ -228,7 +287,7 @@ function AdminPanel() {
     <div className="page admin-panel">
       <div className="page-header">
         <div>
-          <h2>Admin Command Center</h2>
+          <h2>{t('dashboard.adminTitle')}</h2>
           <p>Track sanitation workloads, supervise ward officers, and orchestrate escalations.</p>
         </div>
         <div className="download-actions">
@@ -238,7 +297,7 @@ function AdminPanel() {
             onClick={handleDownloadCSV}
             disabled={!complaints.length || exporting}
           >
-            Download CSV
+            {t('common.downloadCSV')}
           </button>
           <button
             type="button"
@@ -246,30 +305,30 @@ function AdminPanel() {
             onClick={handleDownloadExcel}
             disabled={!complaints.length || exporting}
           >
-            Download Excel
+            {t('common.downloadExcel')}
           </button>
         </div>
       </div>
 
       <div className="stats-grid">
         <div className="stat-card">
-          <p className="stat-label">Total Complaints</p>
+          <p className="stat-label">{t('dashboard.totalComplaints')}</p>
           <p className="stat-value">{stats.total}</p>
         </div>
         <div className="stat-card">
-          <p className="stat-label">Pending</p>
+          <p className="stat-label">{t('dashboard.pending')}</p>
           <p className="stat-value">{stats.pending}</p>
         </div>
         <div className="stat-card">
-          <p className="stat-label">In Progress</p>
+          <p className="stat-label">{t('dashboard.inProgress')}</p>
           <p className="stat-value">{stats.inProgress}</p>
         </div>
         <div className="stat-card">
-          <p className="stat-label">Resolved</p>
+          <p className="stat-label">{t('dashboard.resolved')}</p>
           <p className="stat-value">{stats.resolved}</p>
         </div>
         <div className="stat-card">
-          <p className="stat-label">Assigned to Officers</p>
+          <p className="stat-label">{t('dashboard.assignedTo')}</p>
           <p className="stat-value">{stats.assigned}</p>
         </div>
       </div>
@@ -279,69 +338,115 @@ function AdminPanel() {
       {loading ? (
         <div className="panel">Compiling datasets...</div>
       ) : (
-        <div className="admin-grid">
-          <div className="panel">
+        <div className="admin-grid" style={{ gridTemplateColumns: 'minmax(0, 1fr)' }}>
+          <div className="panel full-width" style={{ gridColumn: '1 / -1', marginBottom: '1.5rem' }}>
             <div className="panel-heading">
-              <h3>Officer Workboard</h3>
-              <p className="panel-subtitle">Monitor ward-wise workloads and completions.</p>
+              <h3>{t('dashboard.approvalsDesk')}</h3>
+              <p className="panel-subtitle">{t('dashboard.reviewOfficerDocs')}</p>
             </div>
-            <div className="table">
-              <div className="table-head">
-                <span>Officer</span>
-                <span>Ward</span>
-                <span>Contact</span>
-                <span>Active Cases</span>
-                <span>Pending</span>
-                <span>In Progress</span>
-                <span>Resolved</span>
-              </div>
-              {officerPerformance.length === 0 && (
-                <div className="table-row">No officer records found.</div>
-              )}
-              {officerPerformance.map((officer) => (
-                <div key={officer.officerId} className="table-row">
-                  <span>{officer.name}</span>
-                  <span>{officer.ward}</span>
-                  <span>{officer.phone}</span>
-                  <span>{officer.activelyHandled}</span>
-                  <span>{officer.pending}</span>
-                  <span>{officer.inProgress}</span>
-                  <span>{officer.resolved}</span>
+            {pendingOfficers.length === 0 ? (
+              <p>{t('dashboard.noPendingApprovals')}</p>
+            ) : (
+              <div className="table">
+                <div className="table-head">
+                  <span>{t('auth.fullName')}</span>
+                  <span>{t('table.ward')}</span>
+                  <span>{t('table.contact')}</span>
+                  <span>{t('dashboard.badgeId')}</span>
+                  <span>{t('table.action')}</span>
                 </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="panel">
-            <div className="panel-heading">
-              <h3>Latest Reports</h3>
-              <p className="panel-subtitle">Fresh incidents needing review.</p>
-            </div>
-            <div className="latest-list">
-              {latestComplaints.length === 0 && <p>No complaints filed yet.</p>}
-              {latestComplaints.map((complaint) => (
-                <article key={complaint.id} className="latest-card">
-                  <div>
-                    <p className="latest-category">{complaint.category}</p>
-                    <p className={`status ${complaint.status.toLowerCase().replace(' ', '-')}`}>
-                      {complaint.status}
-                    </p>
-                  </div>
-                  <p className="latest-description">{complaint.description}</p>
-                  <div className="latest-meta">
-                    <span>Ward {complaint.ward}</span>
-                    <span>{formatDateTime(complaint.createdAt)}</span>
-                  </div>
-                  <div className="latest-actions">
-                    <Link to={`/complaints/${complaint.id}`} className="btn ghost">
-                      View Detail
-                    </Link>
-                    <span className="badge">
-                      {complaint.assignedOfficerName ? `Assigned to ${complaint.assignedOfficerName}` : 'Unassigned'}
+                {pendingOfficers.map((officer) => (
+                  <div key={officer.id} className="table-row">
+                    <span data-label={t('auth.fullName')}>{officer.name}</span>
+                    <span data-label={t('table.ward')}>{officer.ward}</span>
+                    <span data-label={t('table.contact')}>{officer.phone}</span>
+                    <span data-label={t('dashboard.badgeId')}>
+                      {officer.badgeUrl ? (
+                        <a href={officer.badgeUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--color-primary)', textDecoration: 'underline' }}>
+                          {t('table.view')}
+                        </a>
+                      ) : 'No Document'}
+                    </span>
+                    <span data-label={t('table.action')}>
+                      <div className="action-bar" style={{ gap: '0.5rem', marginTop: 0 }}>
+                        <button type="button" className="btn primary" onClick={() => handleApproveOfficer(officer.id)} style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem' }}>
+                          {t('dashboard.approve')}
+                        </button>
+                        <button type="button" className="btn secondary" onClick={() => handleRejectOfficer(officer.id)} style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem', borderColor: 'var(--color-error)', color: 'var(--color-error)' }}>
+                          {t('dashboard.reject')}
+                        </button>
+                      </div>
                     </span>
                   </div>
-                </article>
-              ))}
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="admin-grid" style={{ marginTop: 0 }}>
+            <div className="panel">
+              <div className="panel-heading">
+                <h3>Officer Workboard</h3>
+                <p className="panel-subtitle">Monitor ward-wise workloads and completions.</p>
+              </div>
+              <div className="table">
+                <div className="table-head">
+                  <span>{t('table.officer')}</span>
+                  <span>{t('table.ward')}</span>
+                  <span>{t('table.contact')}</span>
+                  <span>Active Cases</span>
+                  <span>{t('dashboard.pending')}</span>
+                  <span>{t('dashboard.inProgress')}</span>
+                  <span>{t('dashboard.resolved')}</span>
+                </div>
+                {officerPerformance.length === 0 && (
+                  <div className="table-row">No officer records found.</div>
+                )}
+                {officerPerformance.map((officer) => (
+                  <div key={officer.officerId} className="table-row">
+                    <span data-label={t('table.officer')}>{officer.name}</span>
+                    <span data-label={t('table.ward')}>{officer.ward}</span>
+                    <span data-label={t('table.contact')}>{officer.phone}</span>
+                    <span data-label="Active Cases">{officer.activelyHandled}</span>
+                    <span data-label={t('dashboard.pending')}>{officer.pending}</span>
+                    <span data-label={t('dashboard.inProgress')}>{officer.inProgress}</span>
+                    <span data-label={t('dashboard.resolved')}>{officer.resolved}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="panel">
+              <div className="panel-heading">
+                <h3>Latest Reports</h3>
+                <p className="panel-subtitle">Fresh incidents needing review.</p>
+              </div>
+              <div className="latest-list">
+                {latestComplaints.length === 0 && <p>No complaints filed yet.</p>}
+                {latestComplaints.map((complaint) => (
+                  <article key={complaint.id} className="latest-card">
+                    <div>
+                      <p className="latest-category">{t(`categories.${complaint.category}`) || complaint.category}</p>
+                      <p className={`status ${complaint.status.toLowerCase().replace(' ', '-')}`}>
+                        {t(`dashboard.${complaint.status.replace(' ', '')}`) || complaint.status}
+                      </p>
+                    </div>
+                    <p className="latest-description">{complaint.description}</p>
+                    <div className="latest-meta">
+                      <span>{t('table.ward')} {complaint.ward}</span>
+                      <span>{formatDateTime(complaint.createdAt)}</span>
+                    </div>
+                    <div className="latest-actions">
+                      <Link to={`/complaints/${complaint.id}`} className="btn ghost">
+                        {t('table.view')}
+                      </Link>
+                      <span className="badge">
+                        {complaint.assignedOfficerName ? `${t('dashboard.assignedTo')} ${complaint.assignedOfficerName}` : 'Unassigned'}
+                      </span>
+                    </div>
+                  </article>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -357,19 +462,19 @@ function AdminPanel() {
         ) : (
           <div className="table">
             <div className="table-head">
-              <span>Ward</span>
-              <span>Category</span>
-              <span>Description</span>
-              <span>Filed</span>
+              <span>{t('table.ward')}</span>
+              <span>{t('table.category')}</span>
+              <span>{t('table.description')}</span>
+              <span>{t('table.filed')}</span>
               <span>Assign Officer</span>
             </div>
             {unassignedComplaints.map((complaint) => (
               <div key={complaint.id} className="table-row">
-                <span>{complaint.ward}</span>
-                <span>{complaint.category}</span>
-                <span>{complaint.description}</span>
-                <span>{formatDateTime(complaint.createdAt)}</span>
-                <span>
+                <span data-label={t('table.ward')}>{complaint.ward}</span>
+                <span data-label={t('table.category')}>{complaint.category}</span>
+                <span data-label={t('table.description')}>{complaint.description}</span>
+                <span data-label={t('table.filed')}>{formatDateTime(complaint.createdAt)}</span>
+                <span data-label="Assign Officer">
                   <select
                     className="assignment-select"
                     value={complaint.assignedOfficerId || ''}
@@ -377,7 +482,7 @@ function AdminPanel() {
                     disabled={assigning[complaint.id]}
                   >
                     <option value="">Select officer</option>
-                    {officers.map((officer) => (
+                    {activeOfficers.map((officer) => (
                       <option key={officer.id} value={officer.id}>
                         {officer.name || 'Unnamed'} — {officer.ward}
                       </option>

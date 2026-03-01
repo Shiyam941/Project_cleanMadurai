@@ -3,8 +3,11 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { doc, getDoc, updateDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 import { loadGoogleMaps } from '../utils/loadGoogleMaps'
+import resolveErrorMessage from '../utils/errorMessage'
+import { useTranslation } from 'react-i18next'
 
 function ComplaintDetail({ user }) {
+  const { t } = useTranslation()
   const { complaintId } = useParams()
   const navigate = useNavigate()
   const mapContainerRef = useRef(null)
@@ -17,10 +20,13 @@ function ComplaintDetail({ user }) {
   const [updating, setUpdating] = useState(false)
 
   useEffect(() => {
+    let isMounted = true
     const fetchComplaint = async () => {
       try {
         setLoading(true)
         const snapshot = await getDoc(doc(db, 'complaints', complaintId))
+
+        if (!isMounted) return
 
         if (!snapshot.exists()) {
           setError('Complaint not found.')
@@ -35,13 +41,22 @@ function ComplaintDetail({ user }) {
           setError('')
         }
       } catch (err) {
-        setError(err.message || 'Unable to load complaint details.')
+        if (isMounted)
+          setError(
+            resolveErrorMessage(err, {
+              fallbackMessage: 'Unable to load complaint details.',
+            }),
+          )
       } finally {
-        setLoading(false)
+        if (isMounted) setLoading(false)
       }
     }
 
     fetchComplaint()
+
+    return () => {
+      isMounted = false
+    }
   }, [complaintId])
 
   useEffect(() => {
@@ -90,7 +105,11 @@ function ComplaintDetail({ user }) {
 
       setComplaint((prev) => ({ ...prev, status }))
     } catch (err) {
-      setError(err.message || 'Unable to update status.')
+      setError(
+        resolveErrorMessage(err, {
+          fallbackMessage: 'Unable to update status.',
+        }),
+      )
     } finally {
       setUpdating(false)
     }
@@ -131,23 +150,23 @@ function ComplaintDetail({ user }) {
 
       <div className="panel detail-grid">
         <div>
-          <p className="detail-label">Category</p>
-          <p className="detail-value">{complaint.category}</p>
+          <p className="detail-label">{t('table.category')}</p>
+          <p className="detail-value">{t(`categories.${complaint.category}`) || complaint.category}</p>
         </div>
         <div>
-          <p className="detail-label">Ward</p>
+          <p className="detail-label">{t('table.ward')}</p>
           <p className="detail-value">{complaint.ward}</p>
         </div>
         <div>
-          <p className="detail-label">Status</p>
-          <p className={`status ${complaint.status.toLowerCase().replace(' ', '-')}`}>{complaint.status}</p>
+          <p className="detail-label">{t('table.status')}</p>
+          <p className={`status ${complaint.status.toLowerCase().replace(' ', '-')}`}>{t(`dashboard.${complaint.status.replace(' ', '')}`) || complaint.status}</p>
         </div>
         <div>
           <p className="detail-label">AI Validation</p>
           <p>{complaint.aiVerified ? 'Pass' : 'Pending'}</p>
         </div>
         <div className="full-width">
-          <p className="detail-label">Description</p>
+          <p className="detail-label">{t('table.description')}</p>
           <p>{complaint.description}</p>
         </div>
         {complaint.imageUrl && (
@@ -157,7 +176,7 @@ function ComplaintDetail({ user }) {
           </div>
         )}
         <div className="full-width">
-          <p className="detail-label">Location</p>
+          <p className="detail-label">{t('report.selectLocation')}</p>
           <div ref={mapContainerRef} className="map-container" />
         </div>
       </div>

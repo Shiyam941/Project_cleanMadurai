@@ -4,7 +4,9 @@ import { addDoc, collection } from 'firebase/firestore'
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage'
 import { db, storage } from '../firebase'
 import { loadGoogleMaps } from '../utils/loadGoogleMaps'
+import resolveErrorMessage from '../utils/errorMessage'
 import { ZONES, findZoneById, findZoneByWard } from '../constants/zones'
+import { useTranslation } from 'react-i18next'
 
 const categories = [
   'Garbage Accumulation',
@@ -15,6 +17,7 @@ const categories = [
 ]
 
 function ReportComplaint({ user }) {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const mapContainerRef = useRef(null)
   const markerRef = useRef(null)
@@ -211,7 +214,15 @@ function ReportComplaint({ user }) {
       setSuccess('Complaint submitted successfully.')
       setTimeout(() => navigate('/user', { replace: true }), 1200)
     } catch (err) {
-      setError(err.message || 'Unable to submit complaint.')
+      setError(
+        resolveErrorMessage(err, {
+          fallbackMessage: 'Unable to submit complaint.',
+          overrides: {
+            'permission-denied': 'You do not have permission to submit complaints from this account.',
+            'unavailable': 'Complaint service is temporarily unavailable. Please try again soon.',
+          },
+        }),
+      )
     } finally {
       setLoading(false)
     }
@@ -221,8 +232,8 @@ function ReportComplaint({ user }) {
     <div className="page">
       <div className="page-header">
         <div>
-          <h2>Report Sanitation Complaint</h2>
-          <p>Provide details with precise map coordinates to alert field teams.</p>
+          <h2>{t('report.title')}</h2>
+          <p>{t('report.subtitle')}</p>
         </div>
       </div>
 
@@ -231,19 +242,19 @@ function ReportComplaint({ user }) {
         {success && <div className="alert success">{success}</div>}
         <form className="form-grid two-column" onSubmit={handleSubmit}>
           <label>
-            Category
+            {t('table.category')}
             <select name="category" value={formValues.category} onChange={(e) => setFormValues((prev) => ({ ...prev, category: e.target.value }))}>
               {categories.map((category) => (
                 <option key={category} value={category}>
-                  {category}
+                  {t(`categories.${category}`) || category}
                 </option>
               ))}
             </select>
           </label>
           <label>
-            Zone
+            {t('auth.zone')}
             <select name="zoneId" value={formValues.zoneId} onChange={handleZoneChange}>
-              <option value="">Select zone</option>
+              <option value="">{t('common.selectZone')}</option>
               {ZONES.map((zone) => (
                 <option key={zone.id} value={zone.id}>
                   {zone.name}
@@ -252,14 +263,14 @@ function ReportComplaint({ user }) {
             </select>
           </label>
           <label>
-            Ward
+            {t('auth.ward')}
             <select
               name="ward"
               value={formValues.ward}
               onChange={handleWardChange}
               disabled={!formValues.zoneId}
             >
-              <option value="">{formValues.zoneId ? 'Select ward' : 'Choose a zone first'}</option>
+              <option value="">{formValues.zoneId ? t('common.selectWard') : t('common.chooseZoneFirst')}</option>
               {wardOptions.map((ward) => (
                 <option key={ward} value={ward}>
                   {ward}
@@ -268,40 +279,40 @@ function ReportComplaint({ user }) {
             </select>
           </label>
           <label className="full-width">
-            Description
+            {t('table.description')}
             <textarea
               name="description"
               rows="4"
-              placeholder="Describe the sanitation issue"
+              placeholder=""
               value={formValues.description}
               onChange={(e) => setFormValues((prev) => ({ ...prev, description: e.target.value }))}
             />
           </label>
           <label>
-            Upload Evidence Image
+            {t('report.uploadEvidence')}
             <input type="file" accept="image/*" onChange={(e) => setImageFile(e.target.files?.[0] ?? null)} />
           </label>
           <div className="map-field">
-            <p>Select Location on Map</p>
+            <p>{t('report.selectLocation')}</p>
             <div ref={mapContainerRef} className="map-container" />
             <div className="map-actions">
               <button type="button" className="btn secondary" onClick={handleUseCurrentLocation} disabled={locating}>
-                {locating ? 'Detecting location…' : 'Use My Location'}
+                {locating ? t('report.detecting') : t('report.useMyLocation')}
               </button>
             </div>
             <div className="coord-grid">
               <label>
-                Latitude
+                {t('report.latitude')}
                 <input value={formValues.latitude} readOnly />
               </label>
               <label>
-                Longitude
+                {t('report.longitude')}
                 <input value={formValues.longitude} readOnly />
               </label>
             </div>
           </div>
           <button type="submit" className="btn primary" disabled={loading}>
-            {loading ? 'Submitting...' : 'Submit Complaint'}
+            {loading ? t('report.submitting') : t('report.submit')}
           </button>
         </form>
       </div>

@@ -1,0 +1,86 @@
+{
+    "app": {
+        "title": "Madurai City Municipal Corporation",
+        "portalName": "Clean City Portal"
+    },
+    "nav": {
+        "dashboard": "Dashboard",
+        "report": "Report Issue",
+        "profile": "Profile"
+    },
+    "auth": {
+        "login": "Login",
+        "register": "Register",
+        "email": "Email Address",
+        "password": "Password",
+        "role": "Role",
+        "citizenRole": "Citizen User",
+        "officerRole": "Ward Officer",
+        "fullName": "Full Name",
+        "phone": "Phone Number",
+        "zone": "Zone",
+        "ward": "Ward",
+        "address": "Address",
+        "submitLogin": "Sign In",
+        "submitRegister": "Register Account",
+        "noAccount": "Don't have an account?",
+        "hasAccount": "Already registered?",
+        "uploadBadge": "Upload Officer ID / Badge",
+        "pendingApproval": "Registration submitted. Pending Admin approval.",
+        "accountPending": "Your account is pending Admin approval.",
+        "accountRejected": "Your officer registration was rejected. Please contact Admin."
+    },
+    "dashboard": {
+        "adminTitle": "Admin Command Center",
+        "officerTitle": "Officer Command Console",
+        "userTitle": "Citizen Dashboard",
+        "totalComplaints": "Total Reports",
+        "pending": "Pending",
+        "inProgress": "In Progress",
+        "resolved": "Resolved",
+        "assignedTo": "Assigned",
+        "approvalsDesk": "Officer Registration Approvals",
+        "reviewOfficerDocs": "Review new officer registrations and ID documents.",
+        "noPendingApprovals": "No pending officer approvals.",
+        "approve": "Approve",
+        "reject": "Reject",
+        "badgeId": "ID / Badge"
+    },
+    "table": {
+        "category": "Category",
+        "description": "Description",
+        "status": "Status",
+        "filed": "Filed On",
+        "ward": "Ward",
+        "officer": "Officer",
+        "contact": "Contact",
+        "action": "Action",
+        "view": "View Detail"
+    },
+    "categories": {
+        "Garbage Accumulation": "Garbage Accumulation",
+        "Sewage Blockage": "Sewage Blockage",
+        "Drain Overflow": "Drain Overflow",
+        "River Pollution": "River Pollution",
+        "Stray Animal Issue": "Stray Animal Issue"
+    },
+    "report": {
+        "title": "Report Sanitation Issue",
+        "subtitle": "Provide details and precise map coordinates to alert our field teams.",
+        "uploadEvidence": "Upload Evidence Image",
+        "selectLocation": "Select Location on Map",
+        "useMyLocation": "Use My Location",
+        "detecting": "Detecting...",
+        "latitude": "Latitude",
+        "longitude": "Longitude",
+        "submit": "Submit Complaint",
+        "submitting": "Submitting..."
+    },
+    "common": {
+        "selectZone": "Select Zone",
+        "selectWard": "Select Ward",
+        "chooseZoneFirst": "Choose a zone first",
+        "downloadCSV": "Download CSV",
+        "downloadExcel": "Download Excel"
+    }
+}

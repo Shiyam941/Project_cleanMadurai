@@ -2,19 +2,26 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { collection, getDocs, query, where } from 'firebase/firestore'
 import { db } from '../firebase'
+import resolveErrorMessage from '../utils/errorMessage'
+import { useTranslation } from 'react-i18next'
 
 function OfficerDashboard({ user }) {
+  const { t } = useTranslation()
   const [complaints, setComplaints] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   useEffect(() => {
+    let isMounted = true
+
     const fetchComplaints = async () => {
       try {
         setLoading(true)
         const snapshot = await getDocs(
           query(collection(db, 'complaints'), where('ward', '==', user.ward)),
         )
+
+        if (!isMounted) return
 
         const mapped = snapshot.docs
           .map((docSnap) => {
@@ -30,14 +37,23 @@ function OfficerDashboard({ user }) {
         setComplaints(mapped)
         setError('')
       } catch (err) {
-        setError(err.message || 'Unable to load ward complaints right now.')
+        if (isMounted)
+          setError(
+            resolveErrorMessage(err, {
+              fallbackMessage: 'Unable to load ward complaints right now.',
+            }),
+          )
       } finally {
-        setLoading(false)
+        if (isMounted) setLoading(false)
       }
     }
 
     if (user?.ward) {
       fetchComplaints()
+    }
+
+    return () => {
+      isMounted = false
     }
   }, [user?.ward])
 
@@ -52,22 +68,22 @@ function OfficerDashboard({ user }) {
     <div className="page">
       <div className="page-header">
         <div>
-          <h2>Officer Command Console</h2>
+          <h2>{t('dashboard.officerTitle')}</h2>
           <p>Ward responsibility: {user.ward}. Monitor and resolve sanitation grievances.</p>
         </div>
       </div>
 
       <div className="stats-grid">
         <div className="stat-card">
-          <p className="stat-label">Pending</p>
+          <p className="stat-label">{t('dashboard.pending')}</p>
           <p className="stat-value">{stats.pending}</p>
         </div>
         <div className="stat-card">
-          <p className="stat-label">In Progress</p>
+          <p className="stat-label">{t('dashboard.inProgress')}</p>
           <p className="stat-value">{stats.progress}</p>
         </div>
         <div className="stat-card">
-          <p className="stat-label">Resolved</p>
+          <p className="stat-label">{t('dashboard.resolved')}</p>
           <p className="stat-value">{stats.resolved}</p>
         </div>
       </div>
@@ -82,19 +98,19 @@ function OfficerDashboard({ user }) {
         <div className="panel">
           <div className="table">
             <div className="table-head">
-              <span>Category</span>
-              <span>Description</span>
+              <span>{t('table.category')}</span>
+              <span>{t('table.description')}</span>
               <span>Evidence</span>
-              <span>Status</span>
+              <span>{t('table.status')}</span>
               <span>AI</span>
-              <span>Filed</span>
-              <span>Action</span>
+              <span>{t('table.filed')}</span>
+              <span>{t('table.action')}</span>
             </div>
             {complaints.map((complaint) => (
               <div key={complaint.id} className="table-row">
-                <span>{complaint.category}</span>
-                <span>{complaint.description}</span>
-                <span>
+                <span data-label={t('table.category')}>{t(`categories.${complaint.category}`) || complaint.category}</span>
+                <span data-label={t('table.description')}>{complaint.description}</span>
+                <span data-label="Evidence">
                   {complaint.imageUrl ? (
                     <a href={complaint.imageUrl} target="_blank" rel="noreferrer">
                       <img src={complaint.imageUrl} alt="Complaint evidence" className="table-thumb" />
@@ -103,16 +119,16 @@ function OfficerDashboard({ user }) {
                     '—'
                   )}
                 </span>
-                <span>
+                <span data-label={t('table.status')}>
                   <span className={`status ${complaint.status.toLowerCase().replace(' ', '-')}`}>
-                    {complaint.status}
+                    {t(`dashboard.${complaint.status.replace(' ', '')}`) || complaint.status}
                   </span>
                 </span>
-                <span>{complaint.aiVerified ? <span className="badge success">AI</span> : <span className="badge">Manual</span>}</span>
-                <span>{complaint.createdAt ? new Date(complaint.createdAt).toLocaleDateString('en-IN') : '—'}</span>
-                <span>
+                <span data-label="AI Verification">{complaint.aiVerified ? <span className="badge success">AI</span> : <span className="badge">Manual</span>}</span>
+                <span data-label={t('table.filed')}>{complaint.createdAt ? new Date(complaint.createdAt).toLocaleDateString('en-IN') : '—'}</span>
+                <span data-label={t('table.action')}>
                   <Link to={`/complaints/${complaint.id}`} className="btn ghost">
-                    View
+                    {t('table.view')}
                   </Link>
                 </span>
               </div>

@@ -1,10 +1,45 @@
-@import url('https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
 
 :root {
-  font-family: 'Public Sans', 'Segoe UI', sans-serif;
-  color: #1f2f1f;
-  background-color: #f4f7f4;
-  line-height: 1.5;
+  /* Premium Eco Theme Colors */
+  --color-primary: #0a4c20;
+  /* Deep Emerald */
+  --color-primary-light: #167a38;
+  --color-primary-dark: #052e12;
+  --color-accent: #d4af37;
+  /* Premium Gold */
+  --color-accent-hover: #b5952f;
+
+  /* Neutrals with slight green/warm tint */
+  --color-bg: #f4f7f4;
+  --color-surface: rgba(255, 255, 255, 0.85);
+  /* For glassmorphism */
+  --color-surface-solid: #ffffff;
+  --color-text: #1a241c;
+  --color-text-muted: #5c6e5e;
+  --color-border: rgba(10, 76, 32, 0.1);
+  --color-border-solid: #d1e0d1;
+
+  /* Status Colors (Vibrant and clear) */
+  --color-warning: #f5a623;
+  --color-warning-bg: rgba(245, 166, 35, 0.1);
+  --color-info: #4a90e2;
+  --color-info-bg: rgba(74, 144, 226, 0.1);
+  --color-success: #27ae60;
+  --color-success-bg: rgba(39, 174, 96, 0.1);
+  --color-error: #d0021b;
+  --color-error-bg: rgba(208, 2, 27, 0.1);
+
+  /* Shadows for depth */
+  --shadow-sm: 0 2px 8px rgba(10, 76, 32, 0.04);
+  --shadow-md: 0 8px 24px rgba(10, 76, 32, 0.08);
+  --shadow-lg: 0 16px 40px rgba(10, 76, 32, 0.12);
+  --shadow-glow: 0 0 20px rgba(212, 175, 55, 0.3);
+
+  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: var(--color-text);
+  background-color: var(--color-bg);
+  line-height: 1.6;
   font-weight: 400;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -19,8 +54,9 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background-color: #f4f7f4;
-  color: #1f2f1f;
+  background-color: var(--color-bg);
+  background-image: radial-gradient(circle at top right, rgba(22, 122, 56, 0.05), transparent 40%), radial-gradient(circle at bottom left, rgba(212, 175, 55, 0.05), transparent 40%);
+  background-attachment: fixed;
 }
 
 #root {
@@ -28,15 +64,36 @@ body {
 }
 
 a {
-  color: #0b5e2e;
+  color: var(--color-primary-light);
   text-decoration: none;
+  transition: all 0.3s ease;
 }
 
 a:hover {
-  text-decoration: underline;
+  color: var(--color-primary);
 }
 
 img {
   max-width: 100%;
   display: block;
+  border-radius: 8px;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(10, 76, 32, 0.2);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(10, 76, 32, 0.4);
 }

@@ -4,6 +4,8 @@ import { signInWithEmailAndPassword } from 'firebase/auth'
 import { doc, getDoc } from 'firebase/firestore'
 import { auth, db } from '../firebase'
 import { ZONES, findZoneById, findZoneByWard } from '../constants/zones'
+import resolveErrorMessage from '../utils/errorMessage'
+import { useTranslation } from 'react-i18next'
 
 const roleRedirect = {
   user: '/user',
@@ -12,6 +14,7 @@ const roleRedirect = {
 }
 
 function Login({ onLogin }) {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const [formValues, setFormValues] = useState({
     accessType: 'user',
@@ -94,6 +97,13 @@ function Login({ onLogin }) {
         throw new Error('This account belongs to a citizen. Choose Public access type.')
       }
 
+      if (profile.role === 'officer' && profile.status === 'pending') {
+        throw new Error(t('auth.accountPending'))
+      }
+      if (profile.role === 'officer' && profile.status === 'rejected') {
+        throw new Error(t('auth.accountRejected'))
+      }
+
       if (isCitizenLogin) {
         const storedZoneId = profile.zoneId || findZoneByWard(profile.ward)?.id || ''
 
@@ -115,7 +125,17 @@ function Login({ onLogin }) {
       onLogin(sessionUser)
       navigate(roleRedirect[sessionUser.role] ?? '/user', { replace: true })
     } catch (err) {
-      setError(err.message || 'Unable to sign in right now.')
+      setError(
+        resolveErrorMessage(err, {
+          fallbackMessage: 'Unable to sign in right now.',
+          overrides: {
+            'auth/user-not-found': 'We could not find an account with that email.',
+            'auth/wrong-password': 'Email or password is incorrect.',
+            'auth/invalid-credential': 'Email or password is incorrect.',
+            'auth/too-many-requests': 'Too many failed attempts. Please wait and try again.',
+          },
+        }),
+      )
     } finally {
       setLoading(false)
     }
@@ -124,25 +144,25 @@ function Login({ onLogin }) {
   return (
     <div className="auth-shell">
       <div className="auth-card">
-        <p className="portal-label">Madurai City Municipal Corporation</p>
-        <h2>Clean Madurai Access</h2>
+        <p className="portal-label">{t('app.title')}</p>
+        <h2>{t('app.portalName')} Access</h2>
         <p className="form-subtitle">Sign in with your registered civic credentials.</p>
         {error && <div className="alert error">{error}</div>}
         <form onSubmit={handleSubmit} className="form-grid">
           <label>
-            Access Type
+            {t('auth.role')} Access Type
             <select
               name="accessType"
               value={formValues.accessType}
               onChange={handleChange}
               disabled={loading}
             >
-              <option value="user">Public / Citizen</option>
-              <option value="officer">Ward Officer / Admin</option>
+              <option value="user">{t('auth.citizenRole')}</option>
+              <option value="officer">{t('auth.officerRole')} / Admin</option>
             </select>
           </label>
           <label>
-            Email
+            {t('auth.email')}
             <input
               type="email"
               name="email"
@@ -153,7 +173,7 @@ function Login({ onLogin }) {
             />
           </label>
           <label>
-            Password
+            {t('auth.password')}
             <input
               type="password"
               name="password"
@@ -166,14 +186,14 @@ function Login({ onLogin }) {
           {isCitizenLogin && (
             <>
               <label>
-                Zone
+                {t('auth.zone')}
                 <select
                   name="zoneId"
                   value={formValues.zoneId}
                   onChange={handleChange}
                   disabled={loading}
                 >
-                  <option value="">Select zone</option>
+                  <option value="">{t('common.selectZone')}</option>
                   {ZONES.map((zone) => (
                     <option key={zone.id} value={zone.id}>
                       {zone.name}
@@ -182,14 +202,14 @@ function Login({ onLogin }) {
                 </select>
               </label>
               <label>
-                Ward
+                {t('auth.ward')}
                 <select
                   name="ward"
                   value={formValues.ward}
                   onChange={handleChange}
                   disabled={loading || !formValues.zoneId}
                 >
-                  <option value="">{formValues.zoneId ? 'Select ward' : 'Choose a zone first'}</option>
+                  <option value="">{formValues.zoneId ? t('common.selectWard') : t('common.chooseZoneFirst')}</option>
                   {wardOptions.map((ward) => (
                     <option key={ward} value={ward}>
                       {ward}
@@ -200,11 +220,11 @@ function Login({ onLogin }) {
             </>
           )}
           <button type="submit" className="btn primary" disabled={loading}>
-            {loading ? 'Signing in...' : 'Sign In'}
+            {loading ? 'Signing in...' : t('auth.submitLogin')}
           </button>
         </form>
         <p className="form-footer">
-          Need access? <Link to="/register">Register your profile</Link>
+          {t('auth.noAccount')} <Link to="/register">{t('auth.register')}</Link>
         </p>
       </div>
     </div>

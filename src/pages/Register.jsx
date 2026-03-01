@@ -2,8 +2,11 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { createUserWithEmailAndPassword } from 'firebase/auth'
 import { doc, setDoc } from 'firebase/firestore'
-import { auth, db } from '../firebase'
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
+import { auth, db, storage } from '../firebase'
 import { ZONES, findZoneById } from '../constants/zones'
+import resolveErrorMessage from '../utils/errorMessage'
+import { useTranslation } from 'react-i18next'
 
 const defaultForm = {
   name: '',
@@ -17,11 +20,13 @@ const defaultForm = {
 }
 
 function Register() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const [formValues, setFormValues] = useState(defaultForm)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [badgeFile, setBadgeFile] = useState(null)
 
   const isCitizen = formValues.role === 'user'
 
@@ -32,8 +37,6 @@ function Register() {
       setFormValues((prev) => ({
         ...prev,
         role: value,
-        zoneId: value === 'user' ? prev.zoneId : '',
-        ward: value === 'user' ? prev.ward : '',
       }))
       return
     }
@@ -51,6 +54,12 @@ function Register() {
     setFormValues((prev) => ({ ...prev, [name]: value }))
   }
 
+  const handleFileChange = (e) => {
+    if (e.target.files && e.target.files[0]) {
+      setBadgeFile(e.target.files[0])
+    }
+  }
+
   const selectedZone = findZoneById(formValues.zoneId)
   const wardOptions = selectedZone?.wards ?? []
 
@@ -64,41 +73,65 @@ function Register() {
       return
     }
 
-    if (
-      isCitizen &&
-      (!formValues.name || !formValues.zoneId || !formValues.ward)
-    ) {
-      setError('Name, zone, and ward are required for citizens.')
+    if (!formValues.name || !formValues.zoneId || !formValues.ward) {
+      setError('Name, zone, and ward are required.')
+      return
+    }
+
+    if (!isCitizen && !badgeFile) {
+      setError('Officer ID / Badge is required for officer registration.')
       return
     }
 
     try {
       setLoading(true)
       const normalizedEmail = formValues.email.trim().toLowerCase()
-      const zoneMeta = isCitizen ? findZoneById(formValues.zoneId) : null
+      const zoneMeta = findZoneById(formValues.zoneId)
       const credentials = await createUserWithEmailAndPassword(
         auth,
         normalizedEmail,
         formValues.password,
       )
 
+      let badgeUrl = ''
+      if (!isCitizen && badgeFile) {
+        const fileRef = ref(storage, `officer_docs/${credentials.user.uid}`)
+        await uploadBytes(fileRef, badgeFile)
+        badgeUrl = await getDownloadURL(fileRef)
+      }
+
       await setDoc(doc(db, 'users', credentials.user.uid), {
         name: formValues.name,
         phone: formValues.phone,
-        zoneId: isCitizen ? formValues.zoneId : '',
-        zoneName: isCitizen ? zoneMeta?.name ?? '' : '',
-        ward: isCitizen ? formValues.ward : '',
+        zoneId: formValues.zoneId,
+        zoneName: zoneMeta?.name ?? '',
+        ward: formValues.ward,
         address: formValues.address,
         email: normalizedEmail,
         role: formValues.role,
+        ...(!isCitizen && { status: 'pending', badgeUrl }),
         createdAt: new Date(),
       })
 
-      setSuccess('Registration successful. You can now sign in.')
+      if (!isCitizen) {
+        setSuccess(t('auth.pendingApproval'))
+      } else {
+        setSuccess('Registration successful. You can now sign in.')
+      }
+
       setFormValues(defaultForm)
-      setTimeout(() => navigate('/', { replace: true }), 1000)
+      setBadgeFile(null)
+      setTimeout(() => navigate('/', { replace: true }), 2500)
     } catch (err) {
-      setError(err.message || 'Unable to register right now.')
+      setError(
+        resolveErrorMessage(err, {
+          fallbackMessage: 'Unable to register right now.',
+          overrides: {
+            'auth/email-already-in-use': 'This email is already registered. Try signing in instead.',
+            'auth/weak-password': 'Choose a stronger password (at least 6 characters).',
+          },
+        }),
+      )
     } finally {
       setLoading(false)
     }
@@ -107,81 +140,80 @@ function Register() {
   return (
     <div className="auth-shell">
       <div className="auth-card">
-        <p className="portal-label">Madurai City Municipal Corporation</p>
-        <h2>Citizen / Officer Registration</h2>
-        <p className="form-subtitle">Create an account to access the Clean Madurai portal.</p>
+        <p className="portal-label">{t('app.title')}</p>
+        <h2>{t('auth.register')} / Access</h2>
+        <p className="form-subtitle">Create an account to access the portal.</p>
         {error && <div className="alert error">{error}</div>}
         {success && <div className="alert success">{success}</div>}
         <form onSubmit={handleSubmit} className="form-grid two-column">
+          <label>
+            {t('auth.fullName')}
+            <input name="name" value={formValues.name} onChange={handleChange} disabled={loading} />
+          </label>
+          <label>
+            {t('auth.phone')}
+            <input name="phone" value={formValues.phone} onChange={handleChange} disabled={loading} />
+          </label>
+          <label>
+            {t('auth.zone')}
+            <select name="zoneId" value={formValues.zoneId} onChange={handleChange} disabled={loading}>
+              <option value="">{t('common.selectZone')}</option>
+              {ZONES.map((zone) => (
+                <option key={zone.id} value={zone.id}>
+                  {zone.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            {t('auth.ward')}
+            <select
+              name="ward"
+              value={formValues.ward}
+              onChange={handleChange}
+              disabled={loading || !formValues.zoneId}
+            >
+              <option value="">{formValues.zoneId ? t('common.selectWard') : t('common.chooseZoneFirst')}</option>
+              {wardOptions.map((ward) => (
+                <option key={ward} value={ward}>
+                  {ward}
+                </option>
+              ))}
+            </select>
+          </label>
           {isCitizen && (
-            <>
-              <label>
-                Full Name
-                <input name="name" value={formValues.name} onChange={handleChange} disabled={loading} />
-              </label>
-              <label>
-                Phone Number
-                <input name="phone" value={formValues.phone} onChange={handleChange} disabled={loading} />
-              </label>
-              <label>
-                Zone
-                <select name="zoneId" value={formValues.zoneId} onChange={handleChange} disabled={loading}>
-                  <option value="">Select zone</option>
-                  {ZONES.map((zone) => (
-                    <option key={zone.id} value={zone.id}>
-                      {zone.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Ward
-                <select
-                  name="ward"
-                  value={formValues.ward}
-                  onChange={handleChange}
-                  disabled={loading || !formValues.zoneId}
-                >
-                  <option value="">{formValues.zoneId ? 'Select ward' : 'Choose a zone first'}</option>
-                  {wardOptions.map((ward) => (
-                    <option key={ward} value={ward}>
-                      {ward}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Address
-                <input name="address" value={formValues.address} onChange={handleChange} disabled={loading} />
-              </label>
-            </>
+            <label className="full-width">
+              {t('auth.address')}
+              <input name="address" value={formValues.address} onChange={handleChange} disabled={loading} />
+            </label>
           )}
           {!isCitizen && (
-            <p className="full-width muted">
-              Ward officers only need credentials. Citizen fields are hidden for this role.
-            </p>
+            <label className="full-width">
+              {t('auth.uploadBadge')}
+              <input type="file" accept="image/*" onChange={handleFileChange} disabled={loading} className="file-input" style={{ padding: '0.4rem', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)' }} />
+            </label>
           )}
-          <label>
-            Email
+          <label className="full-width">
+            {t('auth.email')}
             <input type="email" name="email" value={formValues.email} onChange={handleChange} disabled={loading} />
           </label>
           <label>
-            Password
+            {t('auth.password')}
             <input type="password" name="password" value={formValues.password} onChange={handleChange} disabled={loading} />
           </label>
           <label>
-            Role
+            {t('auth.role')}
             <select name="role" value={formValues.role} onChange={handleChange} disabled={loading}>
-              <option value="user">Citizen User</option>
-              <option value="officer">Ward Officer</option>
+              <option value="user">{t('auth.citizenRole')}</option>
+              <option value="officer">{t('auth.officerRole')}</option>
             </select>
           </label>
-          <button type="submit" className="btn primary" disabled={loading}>
-            {loading ? 'Registering...' : 'Register'}
+          <button type="submit" className="btn primary full-width" disabled={loading} style={{ gridColumn: '1 / -1' }}>
+            {loading ? 'Registering...' : t('auth.submitRegister')}
           </button>
         </form>
         <p className="form-footer">
-          Already registered? <Link to="/">Back to Login</Link>
+          {t('auth.hasAccount')} <Link to="/">Back to Login</Link>
         </p>
       </div>
     </div>

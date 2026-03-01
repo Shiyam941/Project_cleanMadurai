@@ -10,8 +10,10 @@ import OfficerDashboard from './pages/OfficerDashboard'
 import Register from './pages/Register'
 import ReportComplaint from './pages/ReportComplaint'
 import UserDashboard from './pages/UserDashboard'
+import Profile from './pages/Profile'
 import { auth } from './firebase'
 import './App.css'
+import { clearSessionUser, loadSessionUser, saveSessionUser } from './utils/sessionStore'
 
 const roleRedirect = {
   user: '/user',
@@ -20,24 +22,16 @@ const roleRedirect = {
 }
 
 function App() {
-  const [user, setUser] = useState(() => {
-    try {
-      const stored = localStorage.getItem('cm_user')
-      return stored ? JSON.parse(stored) : null
-    } catch (err) {
-      console.warn('Failed to parse saved session', err)
-      return null
-    }
-  })
+  const [user, setUser] = useState(() => loadSessionUser())
 
   const handleLogin = (account) => {
-    localStorage.setItem('cm_user', JSON.stringify(account))
+    saveSessionUser(account)
     setUser(account)
   }
 
   const handleLogout = () => {
     signOut(auth).catch((err) => console.warn('Failed to sign out user', err))
-    localStorage.removeItem('cm_user')
+    clearSessionUser()
     setUser(null)
   }
 
@@ -95,6 +89,14 @@ function App() {
             element={
               <ProtectedRoute user={user} allowedRoles={['officer', 'admin']}>
                 <ComplaintDetail user={user} />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute user={user} allowedRoles={['user', 'officer', 'admin']}>
+                <Profile user={user} onLogout={handleLogout} />
               </ProtectedRoute>
             }
           />
